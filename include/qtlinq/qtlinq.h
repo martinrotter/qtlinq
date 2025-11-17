@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -357,13 +358,13 @@ namespace qlinq {
 
       // distinct – remove duplicate elements (requires operator==).
       Query<T> distinct() const {
-        QSet<T> seen;
+        std::set<T> seen;
         QList<T> result;
 
         result.reserve(_data.size());
 
         for (const auto& item : _data) {
-          if (!seen.contains(item)) {
+          if (seen.count(item) <= 0) {
             seen.insert(item);
             result.append(item);
           }
