@@ -9,6 +9,7 @@
 #include <utility>
 
 #include <QList>
+#include <QSet>
 
 namespace qlinq {
   template <typename T>
@@ -66,24 +67,23 @@ namespace qlinq {
       // ofType<U> : filters elements where dynamic_cast<U>(item) succeeds.
       template <typename U>
       Query<U> ofType() const {
+        static_assert(std::is_pointer<T>::value, "ofType<U>(): Source sequence type must be a pointer.");
+        static_assert(std::is_pointer<U>::value, "ofType<U>(): Target sequence type must be a pointer.");
+
+        using FromPointee = typename std::remove_pointer<T>::type;
+        using ToPointee = typename std::remove_pointer<U>::type;
+
+        static_assert(std::is_base_of<FromPointee, ToPointee>::value || std::is_base_of<ToPointee, FromPointee>::value,
+                      "ofType<U>() requires convertible pointer types "
+                      "(derived/base relationship missing).");
+
         QList<U> result;
 
-        for (const auto& item : _data) {
-          if constexpr (std::is_pointer<T>::value && std::is_pointer<U>::value) {
-            // Pointer → pointer conversion via dynamic_cast.
-            if (auto casted = dynamic_cast<typename std::remove_pointer<U>::type*>(item)) {
-              result.append(casted);
-            }
-          }
-          else if constexpr (std::is_pointer<T>::value && !std::is_pointer<U>::value) {
-            // Pointer → reference type not allowed.
-            static_assert(!std::is_pointer<U>::value, "ofType<U>() requires U to be a pointer when T is a pointer");
-          }
-          else {
-            // Non-pointer conversion: use typeid.
-            if (typeid(item) == typeid(U)) {
-              result.append(static_cast<U>(item));
-            }
+        result.reserve(_data.size());
+
+        for (auto ptr : _data) {
+          if (auto casted = dynamic_cast<U>(ptr)) {
+            result.append(casted);
           }
         }
 
@@ -357,12 +357,18 @@ namespace qlinq {
 
       // distinct – remove duplicate elements (requires operator==).
       Query<T> distinct() const {
+        QSet<T> seen;
         QList<T> result;
+
+        result.reserve(_data.size());
+
         for (const auto& item : _data) {
-          if (!result.contains(item)) {
+          if (!seen.contains(item)) {
+            seen.insert(item);
             result.append(item);
           }
         }
+
         return Query<T>(std::move(result));
       }
 
