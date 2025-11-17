@@ -38,5 +38,5 @@ if(QTLINQ_BUILD_TESTS)
             Qt${QT_VERSION_MAJOR}::Test
     )
 
-    add_test(NAME qtlinq_tests COMMAND tst_qtlinq)
+    add_test(NAME qtlinq_tests COMMAND tst_qtlinq -v2 -functions)
 endif()
