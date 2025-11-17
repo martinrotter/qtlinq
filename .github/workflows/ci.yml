@@ -32,6 +32,14 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: Run Tests
-        working-directory: build
-        run: tst_qtlinq
+      - name: Run Tests Directly (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          build/Release/tst_qtlinq.exe
+
+      - name: Run Tests Directly (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          ./build/tst_qtlinq
+
+
