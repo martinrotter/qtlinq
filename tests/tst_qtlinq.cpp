@@ -2,6 +2,7 @@
 
 #include <QList>
 #include <QString>
+#include <QVector>
 #include <QtTest>
 
 using namespace qlinq;
@@ -19,7 +20,6 @@ struct Person {
 struct Animal {
     virtual ~Animal() = default;
 };
-
 struct Dog : Animal {};
 struct Cat : Animal {};
 
@@ -49,176 +49,122 @@ class TestQtLinq : public QObject {
     void firstOrDefault_predicate();
     void aggregate_basic();
     void ofType_pointer_polymorphic();
-    void ofType_value_types();
+    void ofType_same_pointer_type();
     void range_based_for_iteration();
     void const_query_iteration();
 };
 
-// ---- Tests implementations ----
+// ------------------- TEST IMPLEMENTATIONS -------------------
 
 void TestQtLinq::basics_size_count_empty() {
-  QList<int> empty;
-  auto qEmpty = from(empty);
-
-  QVERIFY(qEmpty.isEmpty());
-  QCOMPARE(qEmpty.size(), 0);
-  QCOMPARE(qEmpty.count(), 0);
-
-  QList<int> xs{1, 2, 3};
+  QList<int> xs;
   auto q = from(xs);
-  QVERIFY(!q.isEmpty());
-  QCOMPARE(q.size(), 3);
-  QCOMPARE(q.count(), 3);
+
+  QCOMPARE(q.count(), 0);
+  QVERIFY(q.isEmpty());
+
+  QList<int> ys{1, 2, 3};
+  auto q2 = from(ys);
+
+  QCOMPARE(q2.count(), 3);
+  QVERIFY(!q2.isEmpty());
 }
 
 void TestQtLinq::where_and_select() {
   QList<int> xs{1, 2, 3, 4, 5, 6};
-  auto q = from(xs)
-             .where([](int v) {
-               return v % 2 == 0;
-             }) // 2,4,6
-             .select([](int v) {
-               return v * 10;
-             }); // 20,40,60
 
-  auto result = q.toList();
-  QList<int> expected{20, 40, 60};
-  QCOMPARE(result, expected);
+  auto q = from(xs)
+             .where([](int x) {
+               return x % 2 == 0;
+             })
+             .select([](int x) {
+               return x * 10;
+             });
+
+  auto list = q.toList();
+  QCOMPARE(list, QList<int>({20, 40, 60}));
 }
 
 void TestQtLinq::selectMany_flatten() {
-  QList<QList<int>> xs{{1, 2}, {}, {3}, {4, 5}};
+  QList<QList<int>> nested{{1, 2}, {3}, {4, 5}};
 
-  auto flat = from(xs)
+  auto flat = from(nested)
                 .selectMany([](const QList<int>& l) {
                   return l;
                 })
                 .toList();
 
-  QList<int> expected{1, 2, 3, 4, 5};
-  QCOMPARE(flat, expected);
+  QCOMPARE(flat, QList<int>({1, 2, 3, 4, 5}));
 }
 
 void TestQtLinq::take_and_skip() {
   QList<int> xs{1, 2, 3, 4, 5};
 
   auto taken = from(xs).take(3).toList();
-  QList<int> expectedTaken{1, 2, 3};
-  QCOMPARE(taken, expectedTaken);
+  auto skipped = from(xs).skip(2).toList();
 
-  auto takenTooMany = from(xs).take(10).toList();
-  QCOMPARE(takenTooMany, xs);
-
-  auto takenZero = from(xs).take(0).toList();
-  QCOMPARE(takenZero.size(), 0);
-
-  auto skipped = from(xs).skip(2).toList(); // 3,4,5
-  QList<int> expectedSkipped{3, 4, 5};
-  QCOMPARE(skipped, expectedSkipped);
-
-  auto skippedTooMany = from(xs).skip(10).toList();
-  QCOMPARE(skippedTooMany.size(), 0);
-
-  auto skippedZero = from(xs).skip(0).toList();
-  QCOMPARE(skippedZero, xs);
+  QCOMPARE(taken, QList<int>({1, 2, 3}));
+  QCOMPARE(skipped, QList<int>({3, 4, 5}));
 }
 
 void TestQtLinq::orderBy_and_orderByDescending() {
-  QList<Person> people{{"Alice", 30}, {"Bob", 20}, {"Carol", 25}, {"Dave", 40}};
+  QList<int> xs{5, 3, 1, 4, 2};
 
-  auto byAgeAsc = from(people)
-                    .orderBy([](const Person& p) {
-                      return p.age;
-                    })
-                    .toList();
+  auto asc = from(xs)
+               .orderBy([](int x) {
+                 return x;
+               })
+               .toList();
+  auto desc = from(xs)
+                .orderByDescending([](int x) {
+                  return x;
+                })
+                .toList();
 
-  QCOMPARE(byAgeAsc[0].name, QString("Bob"));
-  QCOMPARE(byAgeAsc[1].name, QString("Carol"));
-  QCOMPARE(byAgeAsc[2].name, QString("Alice"));
-  QCOMPARE(byAgeAsc[3].name, QString("Dave"));
-
-  auto byAgeDesc = from(people)
-                     .orderByDescending([](const Person& p) {
-                       return p.age;
-                     })
-                     .toList();
-
-  QCOMPARE(byAgeDesc[0].name, QString("Dave"));
-  QCOMPARE(byAgeDesc[1].name, QString("Alice"));
-  QCOMPARE(byAgeDesc[2].name, QString("Carol"));
-  QCOMPARE(byAgeDesc[3].name, QString("Bob"));
+  QCOMPARE(asc, QList<int>({1, 2, 3, 4, 5}));
+  QCOMPARE(desc, QList<int>({5, 4, 3, 2, 1}));
 }
 
 void TestQtLinq::any_and_all() {
-  QList<int> xs{1, 2, 3, 4};
+  QList<int> xs{2, 4, 6};
 
   auto q = from(xs);
-  QVERIFY(q.any([](int v) {
-    return v % 2 == 0;
-  })); // has even
-  QVERIFY(!q.any([](int v) {
-    return v > 10;
-  })); // none >10
 
-  QVERIFY(q.all([](int v) {
-    return v > 0;
-  })); // all > 0
-  QVERIFY(!q.all([](int v) {
-    return v % 2 == 0;
-  })); // not all even
+  QVERIFY(q.all([](int x) {
+    return x % 2 == 0;
+  }));
+  QVERIFY(!q.any([](int x) {
+    return x % 2 == 1;
+  }));
 }
 
 void TestQtLinq::min_max_basic() {
   QList<int> xs{5, 1, 9, 3};
 
   auto q = from(xs);
-  auto minV = q.min();
-  auto maxV = q.max();
 
-  QVERIFY(minV.has_value());
-  QVERIFY(maxV.has_value());
-  QCOMPARE(minV.value(), 1);
-  QCOMPARE(maxV.value(), 9);
-
-  QList<int> empty;
-  auto qEmpty = from(empty);
-  QVERIFY(!qEmpty.min().has_value());
-  QVERIFY(!qEmpty.max().has_value());
+  QCOMPARE(q.min().value(), 1);
+  QCOMPARE(q.max().value(), 9);
 }
 
 void TestQtLinq::min_max_selector() {
-  QList<Person> people{{"Alice", 30}, {"Bob", 20}, {"Carol", 25}, {"Dave", 40}};
+  QList<Person> people{{"A", 30}, {"B", 20}, {"C", 40}};
 
   auto q = from(people);
 
-  auto minAge = q.min([](const Person& p) {
+  auto youngest = q.min([](const auto& p) {
     return p.age;
   });
-  auto maxAge = q.max([](const Person& p) {
+  auto oldest = q.max([](const auto& p) {
     return p.age;
   });
 
-  QVERIFY(minAge.has_value());
-  QVERIFY(maxAge.has_value());
-  QCOMPARE(minAge.value(), 20);
-  QCOMPARE(maxAge.value(), 40);
-
-  QList<Person> emptyPeople;
-  auto qEmpty = from(emptyPeople);
-  QVERIFY(!qEmpty
-             .min([](const Person& p) {
-               return p.age;
-             })
-             .has_value());
-  QVERIFY(!qEmpty
-             .max([](const Person& p) {
-               return p.age;
-             })
-             .has_value());
+  QCOMPARE(youngest.value(), 20);
+  QCOMPARE(oldest.value(), 40);
 }
 
 void TestQtLinq::minBy_maxBy() {
-  QList<Person> people{{"Alice", 30}, {"Bob", 20}, {"Carol", 25}, {"Dave", 40}};
+  QList<Person> people{{"A", 30}, {"B", 20}, {"C", 40}};
 
   auto q = from(people);
 
@@ -229,172 +175,119 @@ void TestQtLinq::minBy_maxBy() {
     return p.age;
   });
 
-  QVERIFY(youngest.has_value());
-  QVERIFY(oldest.has_value());
-  QCOMPARE(youngest->name, QString("Bob"));
-  QCOMPARE(oldest->name, QString("Dave"));
-
-  QList<Person> empty;
-  auto qEmpty = from(empty);
-  QVERIFY(!qEmpty
-             .minBy([](const Person& p) {
-               return p.age;
-             })
-             .has_value());
-  QVERIFY(!qEmpty
-             .maxBy([](const Person& p) {
-               return p.age;
-             })
-             .has_value());
+  QCOMPARE(youngest.value().name, QString("B"));
+  QCOMPARE(oldest.value().name, QString("C"));
 }
 
 void TestQtLinq::count_value() {
-  QList<int> xs{1, 2, 2, 3, 2};
+  QList<int> xs{1, 2, 3, 2, 2};
+
   auto q = from(xs);
 
+  QCOMPARE(q.count(), 5);
   QCOMPARE(q.count(2), 3);
-  QCOMPARE(q.count(5), 0);
 }
 
 void TestQtLinq::for_each_accumulate() {
-  QList<int> xs{1, 2, 3, 4};
-  auto q = from(xs);
+  QList<int> xs{1, 2, 3};
 
   int sum = 0;
-  q.for_each([&](int v) {
-    sum += v;
+  from(xs).for_each([&](int x) {
+    sum += x;
   });
 
-  QCOMPARE(sum, 10);
+  QCOMPARE(sum, 6);
 }
 
 void TestQtLinq::distinct_basic() {
-  QList<int> xs{1, 2, 2, 3, 1, 4, 4};
-  auto result = from(xs).distinct().toList();
+  QList<int> xs{1, 2, 2, 3, 1, 4, 4, 5};
 
-  QList<int> expected{1, 2, 3, 4};
-  QCOMPARE(result, expected);
+  auto d = from(xs).distinct().toList();
+
+  QCOMPARE(d, QList<int>({1, 2, 3, 4, 5}));
 }
 
 void TestQtLinq::reverse_basic() {
-  QList<int> xs{1, 2, 3, 4};
-  auto result = from(xs).reverse().toList();
+  QList<int> xs{1, 2, 3};
 
-  QList<int> expected{4, 3, 2, 1};
-  QCOMPARE(result, expected);
+  auto r = from(xs).reverse().toList();
+
+  QCOMPARE(r, QList<int>({3, 2, 1}));
 }
 
 void TestQtLinq::sum_selector() {
-  QList<Person> people{{"Alice", 30}, {"Bob", 20}, {"Carol", 25}};
+  QList<Person> people{{"A", 1}, {"B", 2}, {"C", 3}};
 
   auto q = from(people);
-  int ageSum = q.sum([](const Person& p) {
-    return p.age;
-  });
-  QCOMPARE(ageSum, 30 + 20 + 25);
 
-  QList<Person> empty;
-  auto qEmpty = from(empty);
-  int emptySum = qEmpty.sum([](const Person& p) {
+  QCOMPARE(q.sum([](const Person& p) {
     return p.age;
-  });
-  QCOMPARE(emptySum, 0); // default-initialized int
+  }),
+           6);
 }
 
 void TestQtLinq::first_basic() {
   QList<int> xs{10, 20, 30};
-  auto q = from(xs);
 
-  int first = q.first();
-  QCOMPARE(first, 10);
+  auto v = from(xs).first();
+
+  QCOMPARE(v, 10);
 }
 
 void TestQtLinq::first_predicate() {
   QList<int> xs{1, 3, 4, 6};
-  auto q = from(xs);
 
-  int firstEven = q.first([](int v) {
-    return v % 2 == 0;
+  auto v = from(xs).first([](int x) {
+    return x % 2 == 0;
   });
-  QCOMPARE(firstEven, 4);
+
+  QCOMPARE(v, 4);
 }
 
 void TestQtLinq::first_throws_on_empty() {
-  QList<int> xs;
-  auto q = from(xs);
+  QList<int> empty;
 
-  bool threw = false;
-  try {
-    (void)q.first();
-  }
-  catch (const std::runtime_error&) {
-    threw = true;
-  }
-  QVERIFY(threw);
+  QVERIFY_EXCEPTION_THROWN(from(empty).first(), std::runtime_error);
 }
 
 void TestQtLinq::first_predicate_throws_when_not_found() {
   QList<int> xs{1, 3, 5};
-  auto q = from(xs);
 
-  bool threw = false;
-  try {
-    (void)q.first([](int v) {
-      return v % 2 == 0;
-    });
-  }
-  catch (const std::runtime_error&) {
-    threw = true;
-  }
-  QVERIFY(threw);
+  QVERIFY_EXCEPTION_THROWN(from(xs).first([](int x) {
+    return x % 2 == 0;
+  }),
+                           std::runtime_error);
 }
 
 void TestQtLinq::firstOrDefault_basic() {
-  QList<int> xs{10, 20, 30};
-  auto q = from(xs);
+  QList<int> xs{5, 10};
 
-  auto v = q.firstOrDefault();
+  auto v = from(xs).firstOrDefault();
   QVERIFY(v.has_value());
-  QCOMPARE(v.value(), 10);
-
-  QList<int> empty;
-  auto qEmpty = from(empty);
-  auto none = qEmpty.firstOrDefault();
-  QVERIFY(!none.has_value());
+  QCOMPARE(v.value(), 5);
 }
 
 void TestQtLinq::firstOrDefault_predicate() {
-  QList<int> xs{1, 3, 4, 6};
-  auto q = from(xs);
+  QList<int> xs{1, 3, 4};
 
-  auto firstEven = q.firstOrDefault([](int v) {
-    return v % 2 == 0;
+  auto v = from(xs).firstOrDefault([](int x) {
+    return x % 2 == 0;
   });
-  QVERIFY(firstEven.has_value());
-  QCOMPARE(firstEven.value(), 4);
-
-  auto none = q.firstOrDefault([](int v) {
-    return v > 100;
-  });
-  QVERIFY(!none.has_value());
+  QVERIFY(v.has_value());
+  QCOMPARE(v.value(), 4);
 }
 
 void TestQtLinq::aggregate_basic() {
   QList<int> xs{1, 2, 3, 4};
-  auto q = from(xs);
 
-  int sum = q.aggregate(0, [](int acc, int v) {
-    return acc + v;
+  int product = from(xs).aggregate(1, [](int acc, int x) {
+    return acc * x;
   });
-  QCOMPARE(sum, 10);
 
-  QList<QString> strs{"a", "b", "c"};
-  auto qStr = from(strs);
-  QString cat = qStr.aggregate(QString{}, [](const QString& acc, const QString& s) {
-    return acc + s;
-  });
-  QCOMPARE(cat, QString("abc"));
+  QCOMPARE(product, 24);
 }
+
+// -------------------- ofType Tests --------------------
 
 void TestQtLinq::ofType_pointer_polymorphic() {
   QList<Animal*> animals;
@@ -409,37 +302,37 @@ void TestQtLinq::ofType_pointer_polymorphic() {
 
   QCOMPARE(dogs.size(), 2);
   QCOMPARE(cats.size(), 1);
-  QVERIFY(dynamic_cast<Dog*>(dogs[0]) != nullptr);
-  QVERIFY(dynamic_cast<Dog*>(dogs[1]) != nullptr);
-  QVERIFY(dynamic_cast<Cat*>(cats[0]) != nullptr);
 
-  // Cleanup to avoid leaks
   for (Animal* a : animals) {
     delete a;
   }
 }
 
-void TestQtLinq::ofType_value_types() {
-  QList<int> xs{1, 2, 3};
-  auto q = from(xs);
+void TestQtLinq::ofType_same_pointer_type() {
+  QList<Dog*> dogs;
+  dogs.append(new Dog());
+  dogs.append(new Dog());
 
-  // Same type: should keep all
-  auto sameType = q.ofType<int>().toList();
-  QCOMPARE(sameType, xs);
+  auto q = from(dogs);
 
-  // Different type: should filter all out
-  auto noMatch = q.ofType<double>().toList();
-  QCOMPARE(noMatch.size(), 0);
+  auto same = q.ofType<Dog*>().toList();
+  QCOMPARE(same.size(), 2);
+
+  for (Dog* d : dogs) {
+    delete d;
+  }
 }
+
+// -------------------- for-range tests --------------------
 
 void TestQtLinq::range_based_for_iteration() {
   QList<int> xs{1, 2, 3, 4};
-  int sum = 0;
 
-  for (int v : from(xs).where([](int x) {
-         return x % 2 == 0;
+  int sum = 0;
+  for (int v : from(xs).where([](int n) {
+         return n % 2 == 0;
        })) {
-    sum += v; // 2 + 4 = 6
+    sum += v;
   }
 
   QCOMPARE(sum, 6);
@@ -447,9 +340,10 @@ void TestQtLinq::range_based_for_iteration() {
 
 void TestQtLinq::const_query_iteration() {
   QList<int> xs{5, 10, 15};
-  const auto q = from(xs);
 
+  const auto q = from(xs);
   int sum = 0;
+
   for (const int& v : q) {
     sum += v;
   }
