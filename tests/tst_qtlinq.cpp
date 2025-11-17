@@ -87,7 +87,7 @@ void TestQtLinq::where_and_select() {
 }
 
 void TestQtLinq::selectMany_flatten() {
-  QList<QList<int>> xs{{1, 2}, {3}, {4, 5}};
+  QList<QList<int>> xs{{1, 2}, {}, {3}, {4, 5}};
 
   auto flat = from(xs)
                 .selectMany([](const QList<int>& l) {
@@ -95,7 +95,7 @@ void TestQtLinq::selectMany_flatten() {
                 })
                 .toList();
 
-  QList<int> expected{1, 2, 3, 4, 5, 6};
+  QList<int> expected{1, 2, 3, 4, 5};
   QCOMPARE(flat, expected);
 }
 

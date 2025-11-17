@@ -35,7 +35,7 @@ jobs:
       - name: Run Tests Directly (Windows)
         if: runner.os == 'Windows'
         run: |
-          .\build\Release\tst_qtlinq.exe
+          .\build\Release\tst_qtlinq.exe -v2 -txt
 
       - name: Run Tests Directly (Linux/macOS)
         if: runner.os != 'Windows'
