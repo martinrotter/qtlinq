@@ -1,3 +1,5 @@
+// For license of this file, see <project-root-folder>/LICENSE.md.
+
 #include <qtlinq/qtlinq.h>
 
 #include <QList>
