@@ -225,8 +225,9 @@ public:
     {
         Query<T> result(*this);
         result._dataIter.clear();
-        result._dataIter.reserve(size());
+        const auto oldSize = size();
         if (_rangeMode) {
+            result._dataIter.reserve(2);
             for (auto i = _dataIter.first(); i != _dataIter.last(); ++i) {
                 if (pred(*i)) {
                     if (result._dataIter.isEmpty() || !result._rangeMode)
@@ -236,7 +237,7 @@ public:
                         const auto jbegin = result._dataIter.first();
                         const auto jend = result._dataIter.last();
                         result._dataIter.clear();
-                        result._dataIter.reserve(std::distance(jbegin, jend));
+                        result._dataIter.reserve(oldSize);
                         for (auto j = jbegin; j != jend; ++j)
                             result._dataIter.append(j);
                         result._dataIter.append(i);
@@ -249,6 +250,7 @@ public:
             if (result._rangeMode && result._dataIter.size() == 1)
                 result._dataIter.append(_dataIter.last());
         } else {
+            result._dataIter.reserve(oldSize);
             for (auto &&i : std::as_const(_dataIter))
                 if (pred(*i))
                     result._dataIter.append(i);
@@ -288,19 +290,11 @@ public:
         result._dataCopy = std::make_shared<QList<InnerType>>();
         result._dataCopy->reserve(size());
         if (_rangeMode) {
-            for (auto i = _dataIter.first(); i != _dataIter.last(); ++i) {
-                InnerList inner = func(*i);
-                for (const auto &x : inner) {
-                    result._dataCopy->append(x);
-                }
-            }
+            for (auto i = _dataIter.first(); i != _dataIter.last(); ++i)
+                result._dataCopy->append(func(*i));
         } else {
-            for (auto &&i : std::as_const(_dataIter)) {
-                InnerList inner = func(*i);
-                for (const auto &x : inner) {
-                    result._dataCopy->append(x);
-                }
-            }
+            for (auto &&i : std::as_const(_dataIter))
+                result._dataCopy->append(func(*i));
         }
         result._rangeMode = true;
         result._dataIter.append(result._dataCopy->begin());
@@ -368,32 +362,20 @@ public:
     template<typename Pred>
     bool any(Pred pred) const
     {
-        if (_rangeMode) {
-            for (auto i = _dataIter.first(); i != _dataIter.last(); ++i)
-                if (pred(*i))
-                    return true;
-        } else {
-            for (auto &&i : std::as_const(_dataIter))
-                if (pred(*i))
-                    return true;
-        }
-        return false;
+        if (_rangeMode)
+            return std::any_of(_dataIter.first(), _dataIter.last(), pred);
+        else
+            return std::any_of(_dataIter.cbegin(), _dataIter.cend(), [&](const typename QList<T>::const_iterator &i) { return pred(*i); });
     }
 
     // all: do all elements match?
     template<typename Pred>
     bool all(Pred pred) const
     {
-        if (_rangeMode) {
-            for (auto i = _dataIter.first(); i != _dataIter.last(); ++i)
-                if (!pred(*i))
-                    return false;
-        } else {
-            for (auto &&i : std::as_const(_dataIter))
-                if (!pred(*i))
-                    return false;
-        }
-        return true;
+        if (_rangeMode)
+            return std::all_of(_dataIter.first(), _dataIter.last(), pred);
+        else
+            return std::all_of(_dataIter.cbegin(), _dataIter.cend(), [&](const typename QList<T>::const_iterator &i) { return pred(*i); });
     }
 
     // min: return smallest element (requires operator< on T).

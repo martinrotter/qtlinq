@@ -52,6 +52,7 @@ class TestQtLinq : public QObject {
     void range_based_for_iteration();
     void distinct();
     void where_range();
+    void for_each();
 };
 
 // ------------------- TEST IMPLEMENTATIONS -------------------
@@ -100,6 +101,12 @@ void TestQtLinq::distinct(){
   auto q = from(xs).distinct();
   auto list = q.toList();
   QCOMPARE(list, QList<int>({1, 2, 3, 6}));
+}
+void TestQtLinq::for_each(){
+  QList<int> xs{1, 2, 3, 6};
+  auto q = from(xs).for_each([](int& a){a*=10;});
+  auto list = q.toList();
+  QCOMPARE(list, QList<int>({10, 20, 30, 60}));
 }
 
 void TestQtLinq::selectMany_flatten() {
