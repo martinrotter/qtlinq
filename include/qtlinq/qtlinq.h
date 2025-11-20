@@ -228,7 +228,7 @@ public:
         const auto oldSize = size();
         if (_rangeMode) {
             result._dataIter.reserve(2);
-            for (auto i = _dataIter.first(); i != _dataIter.last(); ++i) {
+            for (auto i = _dataIter.first(), iEnd = _dataIter.last(); i != iEnd; ++i) {
                 if (pred(*i)) {
                     if (result._dataIter.isEmpty() || !result._rangeMode)
                         result._dataIter.append(i);
@@ -242,9 +242,8 @@ public:
                             result._dataIter.append(j);
                         result._dataIter.append(i);
                     }
-                } else {
-                    if (result._dataIter.size() == 1)
-                        result._dataIter.append(i);
+                } else if (result._rangeMode && result._dataIter.size() == 1) {
+                    result._dataIter.append(i);
                 }
             }
             if (result._rangeMode && result._dataIter.size() == 1)
@@ -268,7 +267,7 @@ public:
         result._dataCopy = std::make_shared<QList<ResultType>>();
         result._dataCopy->reserve(size());
         if (_rangeMode) {
-            for (auto i = _dataIter.first(); i != _dataIter.last(); ++i)
+            for (auto i = _dataIter.first(), iEnd = _dataIter.last(); i != iEnd; ++i)
                 result._dataCopy->append(func(*i));
         } else {
             for (auto &&i : std::as_const(_dataIter))
@@ -290,7 +289,7 @@ public:
         result._dataCopy = std::make_shared<QList<InnerType>>();
         result._dataCopy->reserve(size());
         if (_rangeMode) {
-            for (auto i = _dataIter.first(); i != _dataIter.last(); ++i)
+            for (auto i = _dataIter.first(), iEnd = _dataIter.last(); i != iEnd; ++i)
                 result._dataCopy->append(func(*i));
         } else {
             for (auto &&i : std::as_const(_dataIter))
@@ -350,7 +349,7 @@ public:
             result._rangeMode = false;
             result._dataIter.clear();
             result._dataIter.reserve(size());
-            for (auto i = _dataIter.first(); i != _dataIter.last(); ++i)
+            for (auto i = _dataIter.first(), iEnd = _dataIter.last(); i != iEnd; ++i)
                 result._dataIter.append(i);
         }
         std::sort(result._dataIter.begin(), result._dataIter.end(),
@@ -471,7 +470,7 @@ public:
         result._rangeMode = false;
         std::set<T> seen;
         if (_rangeMode) {
-            for (auto i = _dataIter.first(); i != _dataIter.last(); ++i) {
+            for (auto i = _dataIter.first(), iEnd = _dataIter.last(); i != iEnd; ++i) {
                 if (std::as_const(seen).find(*i) == seen.cend()) {
                     seen.insert(*i);
                     result._dataIter.append(i);
@@ -517,13 +516,15 @@ public:
     T first(Pred pred) const
     {
         if (_rangeMode) {
-            for (auto i = _dataIter.first(); i != _dataIter.last(); ++i)
-                if (pred(*i))
-                    return *i;
+            const auto iEnd = _dataIter.last();
+            const auto i = std::find_if(_dataIter.first(), iEnd, pred);
+            if (i != iEnd)
+                return *i;
         } else {
-            for (auto &&i : std::as_const(_dataIter))
-                if (pred(*i))
-                    return *i;
+            const auto iEnd = _dataIter.cend();
+            const auto i = std::find_if(_dataIter.cbegin(), iEnd, [&](typename QList<T>::const_iterator j) { return pred(*j); });
+            if (i != iEnd)
+                return **i;
         }
         throw std::runtime_error("qlinq::first(predicate) found no matching element");
     }
@@ -533,7 +534,6 @@ public:
     {
         if (isEmpty())
             return std::nullopt;
-
         return *_dataIter.first();
     }
 
@@ -542,13 +542,15 @@ public:
     std::optional<T> firstOrDefault(Pred pred) const
     {
         if (_rangeMode) {
-            for (auto i = _dataIter.first(); i != _dataIter.last(); ++i)
-                if (pred(*i))
-                    return *i;
+            const auto iEnd = _dataIter.last();
+            const auto i = std::find_if(_dataIter.first(), iEnd, pred);
+            if (i != iEnd)
+                return *i;
         } else {
-            for (auto &&i : std::as_const(_dataIter))
-                if (pred(*i))
-                    return *i;
+            const auto iEnd = _dataIter.cend();
+            const auto i = std::find_if(_dataIter.cbegin(), iEnd, [&](typename QList<T>::const_iterator j) { return pred(*j); });
+            if (i != iEnd)
+                return **i;
         }
         return std::nullopt;
     }
