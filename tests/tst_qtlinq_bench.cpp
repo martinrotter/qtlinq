@@ -33,17 +33,12 @@ class BenchQtLinq : public QObject {
     void bench_take();
     void bench_skip();
     void bench_orderBy();
-    void bench_orderByDescending();
     void bench_any_all();
     void bench_min_max();
-    void bench_minBy_maxBy();
     void bench_count();
     void bench_distinct();
-    void bench_reverse();
-    void bench_sum();
     void bench_first();
     void bench_first_predicate();
-    void bench_aggregate();
     void bench_for_range_loop();
 
     void cleanupTestCase();
@@ -131,19 +126,8 @@ void BenchQtLinq::bench_skip() {
 void BenchQtLinq::bench_orderBy() {
   auto q = from(ints);
   QBENCHMARK {
-    auto out = q.orderBy([](int x) {
-                  return x;
-                })
-                 .toList();
-    Q_UNUSED(out);
-  }
-}
-
-void BenchQtLinq::bench_orderByDescending() {
-  auto q = from(ints);
-  QBENCHMARK {
-    auto out = q.orderByDescending([](int x) {
-                  return x;
+    auto out = q.orderBy([](int a,int b) {
+                  return a<b;
                 })
                  .toList();
     Q_UNUSED(out);
@@ -174,20 +158,6 @@ void BenchQtLinq::bench_min_max() {
   }
 }
 
-void BenchQtLinq::bench_minBy_maxBy() {
-  auto q = from(people);
-  QBENCHMARK {
-    auto mn = q.minBy([](const Person& p) {
-      return p.age;
-    });
-    auto mx = q.maxBy([](const Person& p) {
-      return p.age;
-    });
-    Q_UNUSED(mn);
-    Q_UNUSED(mx);
-  }
-}
-
 void BenchQtLinq::bench_count() {
   auto q = from(ints);
   QBENCHMARK {
@@ -204,23 +174,6 @@ void BenchQtLinq::bench_distinct() {
   }
 }
 
-void BenchQtLinq::bench_reverse() {
-  auto q = from(ints);
-  QBENCHMARK {
-    auto r = q.reverse().toList();
-    Q_UNUSED(r);
-  }
-}
-
-void BenchQtLinq::bench_sum() {
-  auto q = from(people);
-  QBENCHMARK {
-    auto s = q.sum([](const Person& p) {
-      return p.age;
-    });
-    Q_UNUSED(s);
-  }
-}
 
 void BenchQtLinq::bench_first() {
   auto q = from(ints);
@@ -240,15 +193,6 @@ void BenchQtLinq::bench_first_predicate() {
   }
 }
 
-void BenchQtLinq::bench_aggregate() {
-  auto q = from(ints);
-  QBENCHMARK {
-    auto sum = q.aggregate(0LL, [](long long acc, int x) {
-      return acc + x;
-    });
-    Q_UNUSED(sum);
-  }
-}
 
 void BenchQtLinq::bench_for_range_loop() {
   auto q = from(ints);

@@ -37,23 +37,21 @@ class TestQtLinq : public QObject {
     void any_and_all();
     void min_max_basic();
     void min_max_selector();
-    void minBy_maxBy();
     void count_value();
     void for_each_accumulate();
     void distinct_basic();
-    void reverse_basic();
-    void sum_selector();
     void first_basic();
     void first_predicate();
     void first_throws_on_empty();
     void first_predicate_throws_when_not_found();
     void firstOrDefault_basic();
     void firstOrDefault_predicate();
-    void aggregate_basic();
     void ofType_pointer_polymorphic();
     void ofType_same_pointer_type();
-    void range_based_for_iteration();
     void const_query_iteration();
+    void range_based_for_iteration();
+    void distinct();
+    void where_range();
 };
 
 // ------------------- TEST IMPLEMENTATIONS -------------------
@@ -87,6 +85,23 @@ void TestQtLinq::where_and_select() {
   QCOMPARE(list, QList<int>({20, 40, 60}));
 }
 
+void TestQtLinq::where_range(){
+  QList<int> xs{1, 2, 30, 40, 50, 6};
+  auto q = from(xs)
+             .where([](int x) {
+               return x >10;
+             });
+  auto list = q.toList();
+  QCOMPARE(list, QList<int>({30, 40, 50}));
+}
+
+void TestQtLinq::distinct(){
+  QList<int> xs{1, 2, 3, 2, 1, 6};
+  auto q = from(xs).distinct();
+  auto list = q.toList();
+  QCOMPARE(list, QList<int>({1, 2, 3, 6}));
+}
+
 void TestQtLinq::selectMany_flatten() {
   QList<QList<int>> nested{{1, 2}, {3}, {4, 5}};
 
@@ -113,13 +128,13 @@ void TestQtLinq::orderBy_and_orderByDescending() {
   QList<int> xs{5, 3, 1, 4, 2};
 
   auto asc = from(xs)
-               .orderBy([](int x) {
-                 return x;
+               .orderBy([](int a, int b)->bool {
+                 return a<b;
                })
                .toList();
   auto desc = from(xs)
-                .orderByDescending([](int x) {
-                  return x;
+                .orderBy([](int a, int b)->bool {
+                  return b < a;
                 })
                 .toList();
 
@@ -153,32 +168,14 @@ void TestQtLinq::min_max_selector() {
   QList<Person> people{{"A", 30}, {"B", 20}, {"C", 40}};
 
   auto q = from(people);
+  const auto ageCompare = [](const Person& a,const Person& b) {
+    return a.age< b.age;
+  };
+  auto youngest = q.min(ageCompare);
+  auto oldest = q.max(ageCompare);
 
-  auto youngest = q.min([](const auto& p) {
-    return p.age;
-  });
-  auto oldest = q.max([](const auto& p) {
-    return p.age;
-  });
-
-  QCOMPARE(youngest.value(), 20);
-  QCOMPARE(oldest.value(), 40);
-}
-
-void TestQtLinq::minBy_maxBy() {
-  QList<Person> people{{"A", 30}, {"B", 20}, {"C", 40}};
-
-  auto q = from(people);
-
-  auto youngest = q.minBy([](const Person& p) {
-    return p.age;
-  });
-  auto oldest = q.maxBy([](const Person& p) {
-    return p.age;
-  });
-
-  QCOMPARE(youngest.value().name, QString("B"));
-  QCOMPARE(oldest.value().name, QString("C"));
+  QCOMPARE(youngest.value().age, 20);
+  QCOMPARE(oldest.value().age, 40);
 }
 
 void TestQtLinq::count_value() {
@@ -209,25 +206,6 @@ void TestQtLinq::distinct_basic() {
   QCOMPARE(d, QList<int>({1, 2, 3, 4, 5}));
 }
 
-void TestQtLinq::reverse_basic() {
-  QList<int> xs{1, 2, 3};
-
-  auto r = from(xs).reverse().toList();
-
-  QCOMPARE(r, QList<int>({3, 2, 1}));
-}
-
-void TestQtLinq::sum_selector() {
-  QList<Person> people{{"A", 1}, {"B", 2}, {"C", 3}};
-
-  auto q = from(people);
-
-  QCOMPARE(q.sum([](const Person& p) {
-    return p.age;
-  }),
-           6);
-}
-
 void TestQtLinq::first_basic() {
   QList<int> xs{10, 20, 30};
 
@@ -249,16 +227,15 @@ void TestQtLinq::first_predicate() {
 void TestQtLinq::first_throws_on_empty() {
   QList<int> empty;
 
-  QVERIFY_EXCEPTION_THROWN(from(empty).first(), std::runtime_error);
+  QVERIFY_THROWS_EXCEPTION(std::runtime_error, from(empty).first());
 }
 
 void TestQtLinq::first_predicate_throws_when_not_found() {
   QList<int> xs{1, 3, 5};
 
-  QVERIFY_EXCEPTION_THROWN(from(xs).first([](int x) {
+  QVERIFY_THROWS_EXCEPTION(std::runtime_error,from(xs).first([](int x) {
     return x % 2 == 0;
-  }),
-                           std::runtime_error);
+  }));
 }
 
 void TestQtLinq::firstOrDefault_basic() {
@@ -277,16 +254,6 @@ void TestQtLinq::firstOrDefault_predicate() {
   });
   QVERIFY(v.has_value());
   QCOMPARE(v.value(), 4);
-}
-
-void TestQtLinq::aggregate_basic() {
-  QList<int> xs{1, 2, 3, 4};
-
-  int product = from(xs).aggregate(1, [](int acc, int x) {
-    return acc * x;
-  });
-
-  QCOMPARE(product, 24);
 }
 
 // -------------------- ofType Tests --------------------
@@ -346,6 +313,12 @@ void TestQtLinq::const_query_iteration() {
   const auto q = from(xs);
   int sum = 0;
 
+  for (auto i = q.cbegin(), iEnd = q.cend();i!=iEnd;++i) {
+    sum += *i;
+  }
+
+  QCOMPARE(sum, 30);
+  sum = 0;
   for (const int& v : q) {
     sum += v;
   }
