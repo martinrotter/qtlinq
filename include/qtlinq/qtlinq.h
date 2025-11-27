@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <optional>
-#include <set>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -13,6 +12,7 @@
 #include <QSet>
 
 namespace qlinq {
+
   template <typename T>
   class Query {
     public:
@@ -35,15 +35,12 @@ namespace qlinq {
       auto begin() {
         return _data.begin();
       }
-
       auto end() {
         return _data.end();
       }
-
       auto begin() const {
         return _data.begin();
       }
-
       auto end() const {
         return _data.end();
       }
@@ -56,16 +53,14 @@ namespace qlinq {
       int size() const {
         return _data.size();
       }
-
       int count() const {
         return _data.size();
       }
-
       bool isEmpty() const {
         return _data.isEmpty();
       }
 
-      // ofType<U> : filters elements where dynamic_cast<U>(item) succeeds.
+      // ofType<U>: dynamic_cast filter.
       template <typename U>
       Query<U> ofType() const {
         static_assert(std::is_pointer<T>::value, "ofType<U>(): Source sequence type must be a pointer.");
@@ -75,11 +70,9 @@ namespace qlinq {
         using ToPointee = typename std::remove_pointer<U>::type;
 
         static_assert(std::is_base_of<FromPointee, ToPointee>::value || std::is_base_of<ToPointee, FromPointee>::value,
-                      "ofType<U>() requires convertible pointer types "
-                      "(derived/base relationship missing).");
+                      "ofType<U>() requires convertible pointer types");
 
         QList<U> result;
-
         result.reserve(_data.size());
 
         for (auto ptr : _data) {
@@ -96,11 +89,13 @@ namespace qlinq {
       Query<T> where(Pred pred) const {
         QList<T> result;
         result.reserve(_data.size());
+
         for (const auto& item : _data) {
           if (pred(item)) {
             result.append(item);
           }
         }
+
         return Query<T>(std::move(result));
       }
 
@@ -111,13 +106,15 @@ namespace qlinq {
 
         QList<ResultType> result;
         result.reserve(_data.size());
+
         for (const auto& item : _data) {
           result.append(func(item));
         }
+
         return Query<ResultType>(std::move(result));
       }
 
-      // selectMany: project each item to a sequence and flatten.
+      // selectMany: flatten projected sequences (optimized: 2-pass reserve)
       template <typename Func>
       auto selectMany(Func func) const -> Query<typename std::decay<decltype(*func(std::declval<T>()).begin())>::type> {
         using InnerList = decltype(func(std::declval<T>()));
@@ -125,8 +122,17 @@ namespace qlinq {
 
         QList<InnerType> result;
 
+        // Pass 1: total size
+        int total = 0;
         for (const auto& item : _data) {
-          InnerList inner = func(item);
+          const InnerList& inner = func(item);
+          total += inner.size();
+        }
+        result.reserve(total);
+
+        // Pass 2: append
+        for (const auto& item : _data) {
+          const InnerList& inner = func(item);
           for (const auto& x : inner) {
             result.append(x);
           }
@@ -140,16 +146,19 @@ namespace qlinq {
         if (n <= 0) {
           return Query<T>(QList<T>{});
         }
-
         if (n >= _data.size()) {
           return *this;
         }
 
         QList<T> result;
         result.reserve(n);
-        for (int i = 0; i < n; ++i) {
-          result.append(_data[i]);
+
+        auto it = _data.constBegin();
+        auto end = it + n;
+        for (; it != end; ++it) {
+          result.append(*it);
         }
+
         return Query<T>(std::move(result));
       }
 
@@ -158,33 +167,35 @@ namespace qlinq {
         if (n <= 0) {
           return *this;
         }
-
         if (n >= _data.size()) {
           return Query<T>(QList<T>{});
         }
 
         QList<T> result;
         result.reserve(_data.size() - n);
-        for (int i = n; i < _data.size(); ++i) {
-          result.append(_data[i]);
+
+        auto it = _data.constBegin() + n;
+        for (; it != _data.constEnd(); ++it) {
+          result.append(*it);
         }
+
         return Query<T>(std::move(result));
       }
 
-      // orderBy: sort by key selector (ascending).
+      // orderBy: sort ascending.
       template <typename KeySelector>
       Query<T> orderBy(KeySelector keySelector) const {
-        QList<T> result = _data;
+        QList<T> result(_data); // direct ctor → faster than assignment
         std::sort(result.begin(), result.end(), [&](const T& a, const T& b) {
           return keySelector(a) < keySelector(b);
         });
         return Query<T>(std::move(result));
       }
 
-      // orderByDescending: sort by key selector (descending).
+      // orderByDescending: sort descending.
       template <typename KeySelector>
       Query<T> orderByDescending(KeySelector keySelector) const {
-        QList<T> result = _data;
+        QList<T> result(_data);
         std::sort(result.begin(), result.end(), [&](const T& a, const T& b) {
           return keySelector(a) > keySelector(b);
         });
@@ -199,7 +210,6 @@ namespace qlinq {
             return true;
           }
         }
-
         return false;
       }
 
@@ -211,18 +221,16 @@ namespace qlinq {
             return false;
           }
         }
-
         return true;
       }
 
-      // min: return smallest element (requires operator< on T).
+      // min: return smallest element.
       std::optional<T> min() const {
         if (_data.isEmpty()) {
           return std::nullopt;
         }
 
         const T* best = &_data.first();
-
         for (const auto& item : _data) {
           if (item < *best) {
             best = &item;
@@ -232,7 +240,7 @@ namespace qlinq {
         return *best;
       }
 
-      // min(selector): return the minimum selector value (not the element).
+      // min(selector)
       template <typename KeySelector>
       auto min(KeySelector keySelector) const
         -> std::optional<typename std::decay<decltype(keySelector(std::declval<T>()))>::type> {
@@ -245,16 +253,14 @@ namespace qlinq {
         std::optional<R> bestValue;
         for (const auto& item : _data) {
           R k = keySelector(item);
-
           if (!bestValue.has_value() || k < *bestValue) {
             bestValue = k;
           }
         }
-
         return bestValue;
       }
 
-      // min with key selector (like LINQ's MinBy).
+      // minBy
       template <typename KeySelector>
       std::optional<T> minBy(KeySelector keySelector) const {
         if (_data.isEmpty()) {
@@ -266,24 +272,21 @@ namespace qlinq {
 
         for (const auto& item : _data) {
           auto k = keySelector(item);
-
           if (k < bestKey) {
             best = &item;
             bestKey = k;
           }
         }
-
         return *best;
       }
 
-      // max: return largest element (requires operator< on T).
+      // max
       std::optional<T> max() const {
         if (_data.isEmpty()) {
           return std::nullopt;
         }
 
         const T* best = &_data.first();
-
         for (const auto& item : _data) {
           if (*best < item) {
             best = &item;
@@ -293,7 +296,7 @@ namespace qlinq {
         return *best;
       }
 
-      // max(selector): return the maximum selector value (not the element).
+      // max(selector)
       template <typename KeySelector>
       auto max(KeySelector keySelector) const
         -> std::optional<typename std::decay<decltype(keySelector(std::declval<T>()))>::type> {
@@ -306,16 +309,14 @@ namespace qlinq {
         std::optional<R> bestValue;
         for (const auto& item : _data) {
           R k = keySelector(item);
-
           if (!bestValue.has_value() || *bestValue < k) {
             bestValue = k;
           }
         }
-
         return bestValue;
       }
 
-      // max with key selector (like LINQ's MaxBy).
+      // maxBy
       template <typename KeySelector>
       std::optional<T> maxBy(KeySelector keySelector) const {
         if (_data.isEmpty()) {
@@ -327,17 +328,15 @@ namespace qlinq {
 
         for (const auto& item : _data) {
           auto k = keySelector(item);
-
           if (bestKey < k) {
             best = &item;
             bestKey = k;
           }
         }
-
         return *best;
       }
 
-      // count(value) – count occurrences of a specific value.
+      // count(value)
       int count(const T& value) const {
         int c = 0;
         for (const auto& item : _data) {
@@ -348,7 +347,7 @@ namespace qlinq {
         return c;
       }
 
-      // for_each – apply a lambda to every element.
+      // for_each
       template <typename Func>
       void for_each(Func func) const {
         for (const auto& item : _data) {
@@ -356,15 +355,14 @@ namespace qlinq {
         }
       }
 
-      // distinct – remove duplicate elements (requires operator==).
+      // distinct – optimized: use QSet (hash) instead of std::set (tree)
       Query<T> distinct() const {
-        std::set<T> seen;
+        QSet<T> seen;
         QList<T> result;
-
         result.reserve(_data.size());
 
         for (const auto& item : _data) {
-          if (seen.count(item) <= 0) {
+          if (!seen.contains(item)) {
             seen.insert(item);
             result.append(item);
           }
@@ -373,34 +371,35 @@ namespace qlinq {
         return Query<T>(std::move(result));
       }
 
-      // reverse – return elements in reversed order.
+      // reverse – QList copy + std::reverse
       Query<T> reverse() const {
-        QList<T> result = _data;
+        QList<T> result(_data);
         std::reverse(result.begin(), result.end());
         return Query<T>(std::move(result));
       }
 
-      // sum(selector) – sum values produced by selector.
+      // sum(selector)
       template <typename Selector>
       auto sum(Selector selector) const -> typename std::decay<decltype(selector(std::declval<T>()))>::type {
         using R = typename std::decay<decltype(selector(std::declval<T>()))>::type;
+
         R total{};
         for (const auto& item : _data) {
           total += selector(item);
         }
+
         return total;
       }
 
-      // first(): return first element, throw if empty.
+      // first()
       T first() const {
         if (_data.isEmpty()) {
-          throw std::runtime_error("qlinq::first() called on an empty sequence");
+          throw std::runtime_error("qlinq::first() called on empty sequence");
         }
-
         return _data.first();
       }
 
-      // first(predicate): return first matching element, throw if not found.
+      // first(predicate)
       template <typename Pred>
       T first(Pred pred) const {
         for (const auto& item : _data) {
@@ -408,20 +407,18 @@ namespace qlinq {
             return item;
           }
         }
-
-        throw std::runtime_error("qlinq::first(predicate) found no matching element");
+        throw std::runtime_error("qlinq::first(predicate) found no match");
       }
 
-      // firstOrDefault: optional first element.
+      // firstOrDefault()
       std::optional<T> firstOrDefault() const {
         if (_data.isEmpty()) {
           return std::nullopt;
         }
-
         return _data.first();
       }
 
-      // firstOrDefault: optional first element matching predicate.
+      // firstOrDefault(predicate)
       template <typename Pred>
       std::optional<T> firstOrDefault(Pred pred) const {
         for (const auto& item : _data) {
@@ -429,11 +426,10 @@ namespace qlinq {
             return item;
           }
         }
-
         return std::nullopt;
       }
 
-      // aggregate: fold with seed.
+      // aggregate
       template <typename Acc, typename Func>
       Acc aggregate(Acc seed, Func func) const {
         for (const auto& item : _data) {
@@ -446,7 +442,7 @@ namespace qlinq {
       QList<T> _data;
   };
 
-  // Helper free function so you can write qlinq::from(list).
+  // Free helpers.
   template <typename T>
   Query<T> from(const QList<T>& list) {
     return Query<T>::from(list);
