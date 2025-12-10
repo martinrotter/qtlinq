@@ -55,5 +55,5 @@ if(QTLINQ_BUILD_TESTS)
   )
 
   add_test(NAME qtlinq_tests COMMAND tst_qtlinq)
-  add_test(NAME qtlinq_tests_bench COMMAND qtlinq_tests_bench)
+  add_test(NAME qtlinq_tests_bench COMMAND tst_qtlinq_bench)
 endif()
