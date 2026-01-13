@@ -8,66 +8,186 @@
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
+#include <memory>
 
 #include <QList>
 #include <QSet>
 
 namespace qlinq {
-  template <typename T>
-  class Query {
-    public:
-      using value_type = T;
+template<typename T>
+class Query
+{
+public:
+    using value_type = T;
+    struct const_iterator;
+    friend struct const_iterator;
+    template<typename U>
+    friend class Query;
+    struct const_iterator
+    {
+        using iterator_category = std::random_access_iterator_tag;
+        using difference_type = int;
+        using value_type = T;
+        using pointer = value_type *;
+        using reference = value_type &;
+        const_iterator(const typename QList<typename QList<T>::const_iterator>::const_iterator &base)
+            : _iterPointer(std::make_unique<QList<typename QList<T>::const_iterator>::const_iterator>(base))
+            , _baseIterPointer(nullptr)
+        { }
+        const_iterator(const typename QList<T>::const_iterator &base)
+            : _iterPointer(nullptr)
+            , _baseIterPointer(std::make_unique<QList<T>::const_iterator>(base))
+        { }
+        const_iterator(const const_iterator &other)
+            : _iterPointer(std::make_unique<QList<typename QList<T>::const_iterator>::const_iterator>(*other._iterPointer))
+            , _baseIterPointer(std::make_unique<QList<T>::const_iterator>(*other._baseIterPointer))
+        { }
+        const_iterator()
+            : _iterPointer(nullptr)
+            , _baseIterPointer(nullptr)
+        { }
+        value_type operator*() const
+        {
+            if (_iterPointer)
+                return (*_iterPointer)->operator*();
+            return (*_baseIterPointer).operator*();
+        }
+        pointer operator->()
+        {
+            if (_iterPointer)
+                return (*_iterPointer)->operator->();
+            return (*_baseIterPointer).get().operator->();
+        }
+        const_iterator &operator++()
+        {
+            if (_iterPointer)
+                _iterPointer->operator++();
+            else
+                _baseIterPointer->operator++();
+            return *this;
+        }
+        const_iterator &operator++(int)
+        {
+            const_iterator temp(*this);
+            operator++();
+            return temp;
+        }
+        friend bool operator==(const const_iterator &a, const const_iterator &b)
+        {
+            if (a._iterPointer && b._iterPointer)
+                return *a._iterPointer == *b._iterPointer;
+            else if (a._baseIterPointer && b._baseIterPointer)
+                return *a._baseIterPointer == *b._baseIterPointer;
+            return false;
+        };
+        friend bool operator!=(const const_iterator &a, const const_iterator &b) { return !(a == b); };
+        friend bool operator<(const const_iterator &a, const const_iterator &b)
+        {
+            if (a._iterPointer && b._iterPointer)
+                return *a._iterPointer < *b._iterPointer;
+            else if (a._baseIterPointer && b._baseIterPointer)
+                return *a._baseIterPointer < *b._baseIterPointer;
+            return false;
+        };
+        friend bool operator<=(const const_iterator &a, const const_iterator &b) { return !(a > b); };
+        friend bool operator>(const const_iterator &a, const const_iterator &b)
+        {
+            if (a._iterPointer && b._iterPointer)
+                return *a._iterPointer < *b._iterPointer;
+            else if (a._baseIterPointer && b._baseIterPointer)
+                return *a._baseIterPointer < *b._baseIterPointer;
+            return false;
+        };
+        friend bool operator>=(const const_iterator &a, const const_iterator &b) { return !(a < b); };
 
-      Query() = default;
-      explicit Query(const QList<T>& list) : _data(list) {}
-      explicit Query(QList<T>&& list) : _data(std::move(list)) {}
+    private:
+        std::unique_ptr<typename QList<typename QList<T>::const_iterator>::const_iterator> _iterPointer;
+        std::unique_ptr<typename QList<T>::const_iterator> _baseIterPointer;
+    };
 
-      // Factory.
-      static Query<T> from(const QList<T>& list) {
-        return Query<T>(list);
-      }
+    Query()
+        : _rangeMode(true)
+        , _dataCopy(nullptr)
+    { }
+    explicit Query(const QList<T> &list)
+        : _rangeMode(true)
+        , _dataCopy(nullptr)
+        , _dataIter()
+    {
+        _dataIter.reserve(2);
+        _dataIter.append(list.cbegin());
+        _dataIter.append(list.cend());
+    }
+    Query(const Query<T> &other)
+        : _rangeMode(other._rangeMode)
+        , _dataCopy(other._dataCopy)
+        , _dataIter(other._dataIter)
+    { }
+    Query<T> &operator=(const Query<T> &other)
+    {
+        _rangeMode = other._rangeMode;
+        _dataCopy = other._dataCopy;
+        _dataIter = other._dataIter;
+        return *this;
+    }
 
-      static Query<T> from(QList<T>&& list) {
-        return Query<T>(std::move(list));
-      }
+    static Query<T> from(const QList<T> &list) { return Query<T>(list); }
 
-      // Basic iteration.
-      auto begin() {
-        return _data.begin();
-      }
+    // Basic iteration.
+    const_iterator begin() const { return cbegin(); }
+    const_iterator end() const { return cend(); }
+    const_iterator cbegin() const
+    {
+        if (_rangeMode)
+            return const_iterator(_dataIter.first());
+        return const_iterator(_dataIter.cbegin());
+    }
+    const_iterator cend() const
+    {
+        if (_rangeMode)
+            return const_iterator(_dataIter.last());
+        return const_iterator(_dataIter.cend());
+    }
 
-      auto end() {
-        return _data.end();
-      }
+    // Materialization.
+    QList<T> toList() const
+    {
+        if (_dataCopy)
+            return *_dataCopy;
+        if (_rangeMode)
+            return QList<T>(_dataIter.first(), _dataIter.last());
+        QList<T> result;
+        for (auto &&i : std::as_const(_dataIter))
+            result.append(*i);
+        return result;
+    }
 
-      auto begin() const {
-        return _data.begin();
-      }
+    int size() const
+    {
+        if (_dataCopy)
+            return _dataCopy->size();
+        if (_rangeMode)
+            return std::distance(_dataIter.first(), _dataIter.last());
+        return _dataIter.size();
+    }
 
-      auto end() const {
-        return _data.end();
-      }
+    int count() const { return size(); }
 
-      // Materialization.
-      QList<T> toList() const {
-        return _data;
-      }
+    bool isEmpty() const
+    {
+        if (_dataCopy)
+            return _dataCopy->isEmpty();
+        if (_dataIter.isEmpty())
+            return true;
+        if (_rangeMode)
+            return _dataIter.first() == _dataIter.last();
+        return false;
+    }
 
-      int size() const {
-        return _data.size();
-      }
-
-      int count() const {
-        return _data.size();
-      }
-
-      bool isEmpty() const {
-        return _data.isEmpty();
-      }
-
-      // ofType<U> : filters elements where dynamic_cast<U>(item) succeeds.
-      template <typename U>
-      Query<U> ofType() const {
+    // ofType<U> : filters elements where dynamic_cast<U>(item) succeeds.
+    template<typename U>
+    Query<U> ofType() const
+    {
         static_assert(std::is_pointer<T>::value, "ofType<U>(): Source sequence type must be a pointer.");
         static_assert(std::is_pointer<U>::value, "ofType<U>(): Target sequence type must be a pointer.");
 
@@ -78,383 +198,374 @@ namespace qlinq {
                       "ofType<U>() requires convertible pointer types "
                       "(derived/base relationship missing).");
 
-        QList<U> result;
+        Query<U> result;
+        result._dataCopy = std::make_shared<QList<U>>();
+        result._dataCopy->reserve(size());
 
-        result.reserve(_data.size());
-
-        for (auto ptr : _data) {
-          if (auto casted = dynamic_cast<U>(ptr)) {
-            result.append(casted);
-          }
+        if (_rangeMode) {
+            for (auto i = _dataIter.first(); i != _dataIter.last(); ++i) {
+                if (auto casted = dynamic_cast<U>(*i))
+                    result._dataCopy->append(casted);
+            }
+        } else {
+            for (auto &&i : std::as_const(_dataIter))
+                if (auto casted = dynamic_cast<U>(*i))
+                    result._dataCopy->append(casted);
         }
 
-        return Query<U>(std::move(result));
-      }
+        result._rangeMode = true;
+        result._dataIter.append(result._dataCopy->begin());
+        result._dataIter.append(result._dataCopy->end());
+        return result;
+    }
 
-      // where: filter items.
-      template <typename Pred>
-      Query<T> where(Pred pred) const {
-        QList<T> result;
-        result.reserve(_data.size());
-        for (const auto& item : _data) {
-          if (pred(item)) {
-            result.append(item);
-          }
+    // where: filter items.
+    template<typename Pred>
+    Query<T> where(Pred pred) const
+    {
+        Query<T> result(*this);
+        result._dataIter.clear();
+        const auto oldSize = size();
+        if (_rangeMode) {
+            result._dataIter.reserve(2);
+            for (auto i = _dataIter.first(), iEnd = _dataIter.last(); i != iEnd; ++i) {
+                if (pred(*i)) {
+                    if (result._dataIter.isEmpty() || !result._rangeMode)
+                        result._dataIter.append(i);
+                    else if (result._rangeMode && result._dataIter.size() == 2) {
+                        result._rangeMode = false;
+                        const auto jbegin = result._dataIter.first();
+                        const auto jend = result._dataIter.last();
+                        result._dataIter.clear();
+                        result._dataIter.reserve(oldSize);
+                        for (auto j = jbegin; j != jend; ++j)
+                            result._dataIter.append(j);
+                        result._dataIter.append(i);
+                    }
+                } else if (result._rangeMode && result._dataIter.size() == 1) {
+                    result._dataIter.append(i);
+                }
+            }
+            if (result._rangeMode && result._dataIter.size() == 1)
+                result._dataIter.append(_dataIter.last());
+        } else {
+            result._dataIter.reserve(oldSize);
+            for (auto &&i : std::as_const(_dataIter))
+                if (pred(*i))
+                    result._dataIter.append(i);
         }
-        return Query<T>(std::move(result));
-      }
+        return result;
+    }
 
-      // select: project items.
-      template <typename Func>
-      auto select(Func func) const -> Query<typename std::decay<decltype(func(std::declval<T>()))>::type> {
+    // select: project items.
+    template<typename Func>
+    auto select(Func func) const -> Query<typename std::decay<decltype(func(std::declval<T>()))>::type>
+    {
         using ResultType = typename std::decay<decltype(func(std::declval<T>()))>::type;
 
-        QList<ResultType> result;
-        result.reserve(_data.size());
-        for (const auto& item : _data) {
-          result.append(func(item));
+        Query<ResultType> result;
+        result._dataCopy = std::make_shared<QList<ResultType>>();
+        result._dataCopy->reserve(size());
+        if (_rangeMode) {
+            for (auto i = _dataIter.first(), iEnd = _dataIter.last(); i != iEnd; ++i)
+                result._dataCopy->append(func(*i));
+        } else {
+            for (auto &&i : std::as_const(_dataIter))
+                result._dataCopy->append(func(*i));
         }
-        return Query<ResultType>(std::move(result));
-      }
+        result._rangeMode = true;
+        result._dataIter.append(result._dataCopy->begin());
+        result._dataIter.append(result._dataCopy->end());
+        return result;
+    }
 
-      // selectMany: project each item to a sequence and flatten.
-      template <typename Func>
-      auto selectMany(Func func) const -> Query<typename std::decay<decltype(*func(std::declval<T>()).begin())>::type> {
+    // selectMany: project each item to a sequence and flatten.
+    template<typename Func>
+    auto selectMany(Func func) const -> Query<typename std::decay<decltype(*func(std::declval<T>()).begin())>::type>
+    {
         using InnerList = decltype(func(std::declval<T>()));
         using InnerType = typename std::decay<decltype(*std::declval<InnerList>().begin())>::type;
-
-        QList<InnerType> result;
-
-        for (const auto& item : _data) {
-          InnerList inner = func(item);
-          for (const auto& x : inner) {
-            result.append(x);
-          }
+        Query<InnerType> result;
+        result._dataCopy = std::make_shared<QList<InnerType>>();
+        result._dataCopy->reserve(size());
+        if (_rangeMode) {
+            for (auto i = _dataIter.first(), iEnd = _dataIter.last(); i != iEnd; ++i)
+                result._dataCopy->append(func(*i));
+        } else {
+            for (auto &&i : std::as_const(_dataIter))
+                result._dataCopy->append(func(*i));
         }
+        result._rangeMode = true;
+        result._dataIter.append(result._dataCopy->begin());
+        result._dataIter.append(result._dataCopy->end());
+        return result;
+    }
 
-        return Query<InnerType>(std::move(result));
-      }
-
-      // take: first n items.
-      Query<T> take(int n) const {
+    // take: first n items.
+    Query<T> take(int n) const
+    {
         if (n <= 0) {
-          return Query<T>(QList<T>{});
+            return Query<T>();
         }
 
-        if (n >= _data.size()) {
-          return *this;
+        if (n >= size()) {
+            return *this;
         }
 
-        QList<T> result;
-        result.reserve(n);
-        for (int i = 0; i < n; ++i) {
-          result.append(_data[i]);
-        }
-        return Query<T>(std::move(result));
-      }
+        Query<T> result(*this);
+        if (_rangeMode)
+            result._dataIter.last() = result._dataIter.first() + n;
+        else
+            result._dataIter = result._dataIter.first(n);
+        return result;
+    }
 
-      // skip: skip first n items.
-      Query<T> skip(int n) const {
+    // skip: skip first n items.
+    Query<T> skip(int n) const
+    {
         if (n <= 0) {
-          return *this;
+            return *this;
         }
 
-        if (n >= _data.size()) {
-          return Query<T>(QList<T>{});
+        if (n >= size()) {
+            return Query<T>();
         }
 
-        QList<T> result;
-        result.reserve(_data.size() - n);
-        for (int i = n; i < _data.size(); ++i) {
-          result.append(_data[i]);
+        Query<T> result(*this);
+        if (_rangeMode)
+            result._dataIter.first() = result._dataIter.last() - n - 1;
+        else
+            result._dataIter = result._dataIter.last(n);
+        return result;
+    }
+
+    template<typename Compare>
+    Query<T> orderBy(Compare comp) const
+    {
+        Query<T> result(*this);
+        if (_rangeMode) {
+            if (std::is_sorted(_dataIter.first(), _dataIter.last(), comp))
+                return result;
+            result._rangeMode = false;
+            result._dataIter.clear();
+            result._dataIter.reserve(size());
+            for (auto i = _dataIter.first(), iEnd = _dataIter.last(); i != iEnd; ++i)
+                result._dataIter.append(i);
         }
-        return Query<T>(std::move(result));
-      }
+        std::sort(result._dataIter.begin(), result._dataIter.end(),
+                  [&](const typename QList<T>::const_iterator &a, const typename QList<T>::const_iterator &b) -> bool { return comp(*a, *b); });
+        return result;
+    }
 
-      // orderBy: sort by key selector (ascending).
-      template <typename KeySelector>
-      Query<T> orderBy(KeySelector keySelector) const {
-        QList<T> result = _data;
-        std::sort(result.begin(), result.end(), [&](const T& a, const T& b) {
-          return keySelector(a) < keySelector(b);
-        });
-        return Query<T>(std::move(result));
-      }
+    // any: does any element match?
+    template<typename Pred>
+    bool any(Pred pred) const
+    {
+        if (_rangeMode)
+            return std::any_of(_dataIter.first(), _dataIter.last(), pred);
+        else
+            return std::any_of(_dataIter.cbegin(), _dataIter.cend(), [&](const typename QList<T>::const_iterator &i) { return pred(*i); });
+    }
 
-      // orderByDescending: sort by key selector (descending).
-      template <typename KeySelector>
-      Query<T> orderByDescending(KeySelector keySelector) const {
-        QList<T> result = _data;
-        std::sort(result.begin(), result.end(), [&](const T& a, const T& b) {
-          return keySelector(a) > keySelector(b);
-        });
-        return Query<T>(std::move(result));
-      }
+    // all: do all elements match?
+    template<typename Pred>
+    bool all(Pred pred) const
+    {
+        if (_rangeMode)
+            return std::all_of(_dataIter.first(), _dataIter.last(), pred);
+        else
+            return std::all_of(_dataIter.cbegin(), _dataIter.cend(), [&](const typename QList<T>::const_iterator &i) { return pred(*i); });
+    }
 
-      // any: does any element match?
-      template <typename Pred>
-      bool any(Pred pred) const {
-        for (const auto& item : _data) {
-          if (pred(item)) {
-            return true;
-          }
+    // min: return smallest element (requires operator< on T).
+    std::optional<T> min() const
+    {
+        if (isEmpty())
+            return std::nullopt;
+
+        if (_rangeMode)
+            return *std::min_element(_dataIter.first(), _dataIter.last());
+        else
+            return **std::min_element(
+                    _dataIter.cbegin(), _dataIter.cend(),
+                    [](const typename QList<T>::const_iterator &a, const typename QList<T>::const_iterator &b) -> bool { return *a < *b; });
+    }
+
+    // min(selector): return the minimum selector value (not the element).
+    template<typename Compare>
+    std::optional<T> min(Compare comp) const
+    {
+        if (_rangeMode)
+            return *std::min_element(_dataIter.first(), _dataIter.last(), comp);
+        else
+            return **std::min_element(
+                    _dataIter.cbegin(), _dataIter.cend(),
+                    [&](const typename QList<T>::const_iterator &a, const typename QList<T>::const_iterator &b) -> bool { return comp(*a, *b); });
+    }
+
+    std::optional<T> max() const
+    {
+        if (isEmpty())
+            return std::nullopt;
+
+        if (_rangeMode)
+            return *std::max_element(_dataIter.first(), _dataIter.last());
+        else
+            return **std::max_element(
+                    _dataIter.cbegin(), _dataIter.cend(),
+                    [](const typename QList<T>::const_iterator &a, const typename QList<T>::const_iterator &b) -> bool { return *a < *b; });
+    }
+
+    // min(selector): return the minimum selector value (not the element).
+    template<typename Compare>
+    std::optional<T> max(Compare comp) const
+    {
+        if (_rangeMode)
+            return *std::max_element(_dataIter.first(), _dataIter.last(), comp);
+        else
+            return **std::max_element(
+                    _dataIter.cbegin(), _dataIter.cend(),
+                    [&](const typename QList<T>::const_iterator &a, const typename QList<T>::const_iterator &b) -> bool { return comp(*a, *b); });
+    }
+
+    // count(value) – count occurrences of a specific value.
+    int count(const T &value) const
+    {
+        if (_rangeMode)
+            return std::count(_dataIter.first(), _dataIter.last(), value);
+        else
+            return std::count_if(_dataIter.cbegin(), _dataIter.cend(),
+                                 [&](const typename QList<T>::const_iterator &a) -> bool { return *a == value; });
+    }
+
+    // for_each – apply a lambda to every element.
+    template<typename Func>
+    Query<T> for_each(Func func) const
+    {
+        Query<T> result;
+        if (_rangeMode) {
+            result._dataCopy = std::make_shared<QList<T>>(_dataIter.first(), _dataIter.last());
+            for (auto i = result._dataCopy->begin(); i != result._dataCopy->end(); ++i)
+                func(*i);
+        } else {
+            result._dataCopy = std::make_shared<QList<T>>();
+            result._dataCopy->reserve(size());
+            for (auto &&i : std::as_const(_dataIter)) {
+                result._dataCopy->append(*i);
+                func(result._dataCopy->last());
+            }
         }
+        result._rangeMode = true;
+        result._dataIter.append(result._dataCopy->begin());
+        result._dataIter.append(result._dataCopy->end());
+        return result;
+    }
 
-        return false;
-      }
-
-      // all: do all elements match?
-      template <typename Pred>
-      bool all(Pred pred) const {
-        for (const auto& item : _data) {
-          if (!pred(item)) {
-            return false;
-          }
-        }
-
-        return true;
-      }
-
-      // min: return smallest element (requires operator< on T).
-      std::optional<T> min() const {
-        if (_data.isEmpty()) {
-          return std::nullopt;
-        }
-
-        const T* best = &_data.first();
-
-        for (const auto& item : _data) {
-          if (item < *best) {
-            best = &item;
-          }
-        }
-
-        return *best;
-      }
-
-      // min(selector): return the minimum selector value (not the element).
-      template <typename KeySelector>
-      auto min(KeySelector keySelector) const
-        -> std::optional<typename std::decay<decltype(keySelector(std::declval<T>()))>::type> {
-        using R = typename std::decay<decltype(keySelector(std::declval<T>()))>::type;
-
-        if (_data.isEmpty()) {
-          return std::nullopt;
-        }
-
-        std::optional<R> bestValue;
-        for (const auto& item : _data) {
-          R k = keySelector(item);
-
-          if (!bestValue.has_value() || k < *bestValue) {
-            bestValue = k;
-          }
-        }
-
-        return bestValue;
-      }
-
-      // min with key selector (like LINQ's MinBy).
-      template <typename KeySelector>
-      std::optional<T> minBy(KeySelector keySelector) const {
-        if (_data.isEmpty()) {
-          return std::nullopt;
-        }
-
-        const T* best = &_data.first();
-        auto bestKey = keySelector(*best);
-
-        for (const auto& item : _data) {
-          auto k = keySelector(item);
-
-          if (k < bestKey) {
-            best = &item;
-            bestKey = k;
-          }
-        }
-
-        return *best;
-      }
-
-      // max: return largest element (requires operator< on T).
-      std::optional<T> max() const {
-        if (_data.isEmpty()) {
-          return std::nullopt;
-        }
-
-        const T* best = &_data.first();
-
-        for (const auto& item : _data) {
-          if (*best < item) {
-            best = &item;
-          }
-        }
-
-        return *best;
-      }
-
-      // max(selector): return the maximum selector value (not the element).
-      template <typename KeySelector>
-      auto max(KeySelector keySelector) const
-        -> std::optional<typename std::decay<decltype(keySelector(std::declval<T>()))>::type> {
-        using R = typename std::decay<decltype(keySelector(std::declval<T>()))>::type;
-
-        if (_data.isEmpty()) {
-          return std::nullopt;
-        }
-
-        std::optional<R> bestValue;
-        for (const auto& item : _data) {
-          R k = keySelector(item);
-
-          if (!bestValue.has_value() || *bestValue < k) {
-            bestValue = k;
-          }
-        }
-
-        return bestValue;
-      }
-
-      // max with key selector (like LINQ's MaxBy).
-      template <typename KeySelector>
-      std::optional<T> maxBy(KeySelector keySelector) const {
-        if (_data.isEmpty()) {
-          return std::nullopt;
-        }
-
-        const T* best = &_data.first();
-        auto bestKey = keySelector(*best);
-
-        for (const auto& item : _data) {
-          auto k = keySelector(item);
-
-          if (bestKey < k) {
-            best = &item;
-            bestKey = k;
-          }
-        }
-
-        return *best;
-      }
-
-      // count(value) – count occurrences of a specific value.
-      int count(const T& value) const {
-        int c = 0;
-        for (const auto& item : _data) {
-          if (item == value) {
-            ++c;
-          }
-        }
-        return c;
-      }
-
-      // for_each – apply a lambda to every element.
-      template <typename Func>
-      void for_each(Func func) const {
-        for (const auto& item : _data) {
-          func(item);
-        }
-      }
-
-      // distinct – remove duplicate elements (requires operator==).
-      Query<T> distinct() const {
+    // distinct – remove duplicate elements (requires operator==).
+    Query<T> distinct() const
+    {
+        Query<T> result(*this);
+        result._dataIter.clear();
+        result._dataIter.reserve(size());
+        result._rangeMode = false;
         std::set<T> seen;
-        QList<T> result;
-
-        result.reserve(_data.size());
-
-        for (const auto& item : _data) {
-          if (seen.count(item) <= 0) {
-            seen.insert(item);
-            result.append(item);
-          }
+        if (_rangeMode) {
+            for (auto i = _dataIter.first(), iEnd = _dataIter.last(); i != iEnd; ++i) {
+                if (std::as_const(seen).find(*i) == seen.cend()) {
+                    seen.insert(*i);
+                    result._dataIter.append(i);
+                }
+            }
+            bool allSequential = true;
+            auto ExpectedIter = result._dataIter.first();
+            for (int i = 1; allSequential && i < result._dataIter.size(); ++i)
+                allSequential = result._dataIter.at(i) == ++ExpectedIter;
+            if (allSequential) {
+                auto newBegin = result._dataIter.first();
+                auto newEnd = result._dataIter.last();
+                result._dataIter.clear();
+                result._dataIter.reserve(2);
+                result._dataIter.append(newBegin);
+                result._dataIter.append(newEnd);
+                result._rangeMode = true;
+            }
+        } else {
+            for (auto &&i : std::as_const(_dataIter)) {
+                if (std::as_const(seen).find(*i) == seen.cend()) {
+                    seen.insert(*i);
+                    result._dataIter.append(i);
+                }
+            }
         }
+        if (seen.size() == size())
+            return *this;
+        return result;
+    }
 
-        return Query<T>(std::move(result));
-      }
-
-      // reverse – return elements in reversed order.
-      Query<T> reverse() const {
-        QList<T> result = _data;
-        std::reverse(result.begin(), result.end());
-        return Query<T>(std::move(result));
-      }
-
-      // sum(selector) – sum values produced by selector.
-      template <typename Selector>
-      auto sum(Selector selector) const -> typename std::decay<decltype(selector(std::declval<T>()))>::type {
-        using R = typename std::decay<decltype(selector(std::declval<T>()))>::type;
-        R total{};
-        for (const auto& item : _data) {
-          total += selector(item);
+    // first(): return first element, throw if empty.
+    T first() const
+    {
+        if (isEmpty()) {
+            throw std::runtime_error("qlinq::first() called on an empty sequence");
         }
-        return total;
-      }
+        return *_dataIter.first();
+    }
 
-      // first(): return first element, throw if empty.
-      T first() const {
-        if (_data.isEmpty()) {
-          throw std::runtime_error("qlinq::first() called on an empty sequence");
+    // first(predicate): return first matching element, throw if not found.
+    template<typename Pred>
+    T first(Pred pred) const
+    {
+        if (_rangeMode) {
+            const auto iEnd = _dataIter.last();
+            const auto i = std::find_if(_dataIter.first(), iEnd, pred);
+            if (i != iEnd)
+                return *i;
+        } else {
+            const auto iEnd = _dataIter.cend();
+            const auto i = std::find_if(_dataIter.cbegin(), iEnd, [&](typename QList<T>::const_iterator j) { return pred(*j); });
+            if (i != iEnd)
+                return **i;
         }
-
-        return _data.first();
-      }
-
-      // first(predicate): return first matching element, throw if not found.
-      template <typename Pred>
-      T first(Pred pred) const {
-        for (const auto& item : _data) {
-          if (pred(item)) {
-            return item;
-          }
-        }
-
         throw std::runtime_error("qlinq::first(predicate) found no matching element");
-      }
+    }
 
-      // firstOrDefault: optional first element.
-      std::optional<T> firstOrDefault() const {
-        if (_data.isEmpty()) {
-          return std::nullopt;
+    // firstOrDefault: optional first element.
+    std::optional<T> firstOrDefault() const
+    {
+        if (isEmpty())
+            return std::nullopt;
+        return *_dataIter.first();
+    }
+
+    // firstOrDefault: optional first element matching predicate.
+    template<typename Pred>
+    std::optional<T> firstOrDefault(Pred pred) const
+    {
+        if (_rangeMode) {
+            const auto iEnd = _dataIter.last();
+            const auto i = std::find_if(_dataIter.first(), iEnd, pred);
+            if (i != iEnd)
+                return *i;
+        } else {
+            const auto iEnd = _dataIter.cend();
+            const auto i = std::find_if(_dataIter.cbegin(), iEnd, [&](typename QList<T>::const_iterator j) { return pred(*j); });
+            if (i != iEnd)
+                return **i;
         }
-
-        return _data.first();
-      }
-
-      // firstOrDefault: optional first element matching predicate.
-      template <typename Pred>
-      std::optional<T> firstOrDefault(Pred pred) const {
-        for (const auto& item : _data) {
-          if (pred(item)) {
-            return item;
-          }
-        }
-
         return std::nullopt;
-      }
+    }
 
-      // aggregate: fold with seed.
-      template <typename Acc, typename Func>
-      Acc aggregate(Acc seed, Func func) const {
-        for (const auto& item : _data) {
-          seed = func(seed, item);
-        }
-        return seed;
-      }
+private:
+    std::shared_ptr<QList<T>> _dataCopy;
+    QList<typename QList<T>::const_iterator> _dataIter;
+    bool _rangeMode;
+};
 
-    private:
-      QList<T> _data;
-  };
-
-  // Helper free function so you can write qlinq::from(list).
-  template <typename T>
-  Query<T> from(const QList<T>& list) {
+// Helper free function so you can write qlinq::from(list).
+template<typename T>
+Query<T> from(const QList<T> &list)
+{
     return Query<T>::from(list);
-  }
-
-  template <typename T>
-  Query<T> from(QList<T>&& list) {
-    return Query<T>::from(std::move(list));
-  }
+}
 
 } // namespace qlinq
