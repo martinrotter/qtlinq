@@ -356,6 +356,18 @@ namespace qlinq {
         }
       }
 
+      template <typename KeySelector>
+      auto groupBy(KeySelector keySelector) const {
+        using Key = decltype(keySelector(std::declval<T>()));
+        QHash<Key, QList<T>> groups;
+
+        for (const auto& item : _data) {
+          groups[keySelector(item)].append(item);
+        }
+
+        return groups;
+      }
+
       // distinct – remove duplicate elements (requires operator==).
       Query<T> distinct() const {
         std::set<T> seen;
