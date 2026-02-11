@@ -385,6 +385,25 @@ namespace qlinq {
         return Query<T>(std::move(result));
       }
 
+      // distinctBy – remove duplicates based on a key selector.
+      template <typename KeySelector>
+      Query<T> distinctBy(KeySelector keySelector) const {
+        using Key = decltype(keySelector(std::declval<T>()));
+        std::set<Key> seenKeys;
+        QList<T> result;
+
+        result.reserve(_data.size());
+
+        for (const auto& item : _data) {
+          Key key = keySelector(item);
+          if (seenKeys.count(key) <= 0) {
+            seenKeys.insert(key);
+            result.append(item);
+          }
+        }
+        return Query<T>(std::move(result));
+      }
+
       // reverse – return elements in reversed order.
       Query<T> reverse() const {
         QList<T> result = _data;
