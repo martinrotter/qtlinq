@@ -368,6 +368,18 @@ namespace qlinq {
         return groups;
       }
 
+      // indexOf(predicate) - return index of first matching element, or -1 if not found.
+      template <typename Pred>
+      int indexOf(Pred pred) const {
+        for (int i = 0; i < _data.size(); ++i) {
+          if (pred(_data[i])) {
+            return i;
+          }
+        }
+
+        return -1;
+      }
+
       // distinct – remove duplicate elements (requires operator==).
       Query<T> distinct() const {
         std::set<T> seen;
